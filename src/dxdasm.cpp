@@ -382,7 +382,7 @@ void write_alias_table(dasmcl* dcl, dx_uint depth) {
     printf("\n");
   }
   printf("%s  }\n", tabbing.c_str());
-  printf(")\n");
+  printf("%s)\n", tabbing.c_str());
 }
 
 void decompile_class(dasmcl* dcl, dx_uint depth) {
@@ -455,6 +455,7 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
     for(str = cl->interfaces->s; *str; ++str) {
       if(str != cl->interfaces->s) printf(", ");
       printf("%s", get_import_name(dcl, (*str)->s).c_str());
+      //printf("%s", dxc_type_nice((*str)->s));
     }
     printf(" ");
   }
@@ -493,7 +494,12 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
                get_import_name(dcl, fld->type->s).c_str(), fld->name->s);
       }
       if(svalue) {
-        printf(" = %s;\n", dxc_value_nice(svalue));
+        if(svalue->type == VALUE_STRING) {
+          printf(" = \"%s\";\n",
+                 encode_string(svalue->value.val_str->s).c_str());
+        } else {
+          printf(" = %s;\n", dxc_value_nice(svalue));
+        }
         fld->access_flags = (DexAccessFlags)(fld->access_flags | ACC_UNUSED);
       } else {
         printf(";\n");
@@ -540,10 +546,10 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
     if(mtd->access_flags & ACC_CONSTRUCTOR) {
       if(mtd->access_flags & ACC_STATIC) {
         isclinit = true;
-        printf("%s  void dxdasm_static(", tabbing.c_str());
+        printf("%s  static void dxdasm_static(", tabbing.c_str());
       } else if(flags.empty()) {
         printf("%s  %s(", tabbing.c_str(),
-               get_import_name(dcl, cl->name->s).c_str());
+               type_brief(cl->name->s).c_str());
       } else {
         printf("%s  %s %s(", tabbing.c_str(), flags.c_str(),
                get_import_name(dcl, cl->name->s).c_str());
@@ -559,11 +565,18 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
       ref_str** para = mtd->code_body->debug_information->parameter_names->s;
       for(int i = 1; mtd->prototype->s[i]; i++) {
         if(i > 1) printf(", ");
+        string type_str;
+        if(!mtd->prototype->s[i + 1] && (mtd->access_flags & ACC_VARARGS)) {
+          type_str = type_brief(mtd->prototype->s[i]->s + 1) + "...";
+        } else {
+          type_str = type_brief(mtd->prototype->s[i]->s);
+        }
+
         if(*para && (*para)->s[0]) {
-          printf("%s %s", type_brief(mtd->prototype->s[i]->s).c_str(),
+          printf("%s %s", type_str.c_str(),
                  (*para++)->s);
         } else {
-          printf("%s arg%d", type_brief(mtd->prototype->s[i]->s).c_str(), i);
+          printf("%s arg%d", type_str.c_str(), i);
         }
       }
       printf(")%s {\n", throwsString.c_str());
@@ -685,6 +698,7 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
   for(int i = 0; i < inner.size(); i++) {
     if(feedLine) printf("\n");
     feedLine = 1;
+    inner[i]->import_table = dcl->import_table;
     decompile_class(inner[i], depth + 1);
   }
   printf("%s}\n", tabbing.c_str());

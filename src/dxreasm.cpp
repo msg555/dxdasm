@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "dasmcl.h"
+
 using namespace std;
 using namespace dxcut;
 
@@ -572,6 +574,7 @@ int main(int argc, char** argv) {
   for(DexClass* cl = dx->classes; !dxc_is_sentinel_class(cl); ++cl) {
     reassemble_class(cl);
   }
+  strip_classes(dx);
 
   FILE* fout = fopen(argv[2], "w");
   dxc_write_file(dx, fout);

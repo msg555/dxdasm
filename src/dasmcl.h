@@ -9,6 +9,10 @@
 #include <dxcut/dxcut.h>
 
 typedef struct RefMethodCompare {
+  bool operator()(ref_method a, ref_method b) const {
+    return (*this)(&a, &b);
+  }
+
   bool operator()(ref_method* a, ref_method* b) const {
     int r = strcmp(a->name->s, b->name->s);
     if(!r) r = strcmp(a->defining_class->s, b->defining_class->s);

@@ -172,6 +172,56 @@ string filter_name(const string& s) {
   return ret;
 }
 
+static
+string sanitize_identifier(string id, int token = -1) {
+  if(token < -1 || !is_java_identifier(id.c_str())) {
+    if(token == -1) {
+      return string("_dxdasm_") + id;
+    } else {
+      char buf[32];
+      sprintf(buf, "%d", token < 0 ? -token - 2 : token);
+      return string("_dxdasm") + buf + "_" + id;
+    }
+  }
+  return id;
+}
+
+static
+string desanitize_identifier(string id) {
+  if(id.size() > 8 && id.substr(0, 7) == "_dxdasm") {
+    return id.substr(id.find('_', 7) + 1);
+  }
+  return id;
+}
+
+static
+string sanitize_type(string type) {
+  int last = type.size() - 1;
+  for(int i = type.size() - 2; i >= 1; i--) {
+    if(i == 1 || type[i - 1] == '/' || type[i - 1] == '$') {
+      type.replace(i, last - i,
+                   sanitize_identifier(type.substr(i, last - i), i));
+      last = i - 1;
+    }
+  }
+  return type;
+}
+
+static
+string desanitize_type(string type) {
+  int last = type.size() - 1;
+  for(int i = type.size() - 2; i >= 1; i--) {
+    if(i == 1 || type[i - 1] == '/' || type[i - 1] == '$') {
+      type.replace(i, last - i,
+                   desanitize_identifier(type.substr(i, last - i)));
+      last = i - 1;
+    }
+  }
+  return type;
+}
+
+
+
 void prep_classes(DexFile* dxfile, std::vector<dasmcl>& clist,
                   map<string, dasmcl*>& clmap) {
   vector<ref_field> source_fields; vector<ref_field> dest_fields;
@@ -179,42 +229,48 @@ void prep_classes(DexFile* dxfile, std::vector<dasmcl>& clist,
   vector<ref_str*> source_classes; vector<ref_str*> dest_classes;
   source_classes.push_back(dxc_induct_str("Ljava/lang/Enum;"));
   dest_classes.push_back(dxc_induct_str("Lorg/dxcut/dxdasm/DxdasmEnum;"));
+
   for(DexClass* cl = dxfile->classes; !dxc_is_sentinel_class(cl); ++cl) {
     string type = cl->name->s;
+    string stype = sanitize_type(type);
     string tbrief = type_brief(type);
-    if(!is_java_identifier(tbrief.c_str())) {
-      type.insert(type.size() - tbrief.size() - 1, "_dxdasm_");
+    if(type != stype) {
       source_classes.push_back(dxc_copy_str(cl->name));
-      dest_classes.push_back(dxc_induct_str(type.c_str()));
+      dest_classes.push_back(dxc_induct_str(stype.c_str()));
     }
     for(int iter = 0; iter < 2; iter++)
     for(DexField* fld = iter ? cl->static_fields : cl->instance_fields;
         !dxc_is_sentinel_field(fld); ++fld) {
-      if(!is_java_identifier(fld->name->s)) {
+      string sfield = sanitize_identifier(fld->name->s);
+      if(sfield != fld->name->s) {
         ref_field rfld, dfld;
         rfld.defining_class = dxc_copy_str(cl->name);
         rfld.name = dxc_copy_str(fld->name);
         rfld.type = dxc_copy_str(fld->type);
         dfld.defining_class = dxc_copy_str(cl->name);
-        dfld.name = dxc_induct_str((string("_dxdasm_") +
-                                    filter_name(fld->name->s)).c_str());
+        dfld.name = dxc_induct_str(sfield.c_str());
         dfld.type = dxc_copy_str(fld->type);
         source_fields.push_back(rfld);
         dest_fields.push_back(dfld);
       }
     }
+    set<string> method_names;
     for(int iter = 0; iter < 2; iter++)
     for(DexMethod* mtd = iter ? cl->direct_methods : cl->virtual_methods;
         !dxc_is_sentinel_method(mtd); ++mtd) {
-      if(!is_java_identifier(mtd->name->s) && strcmp("<init>", mtd->name->s) &&
+      string smethod = sanitize_identifier(mtd->name->s);
+      for(int i = 0; !method_names.insert(smethod).second; i++) {
+        smethod = sanitize_identifier(mtd->name->s, -i - 2);
+      }
+
+      if(smethod != mtd->name->s && strcmp("<init>", mtd->name->s) &&
          strcmp("<clinit>", mtd->name->s)) {
         ref_method rmtd, dmtd;
         rmtd.defining_class = dxc_copy_str(cl->name);
         rmtd.name = dxc_copy_str(mtd->name);
         rmtd.prototype = dxc_copy_strstr(mtd->prototype);
         dmtd.defining_class = dxc_copy_str(cl->name);
-        dmtd.name = dxc_induct_str((string("_dxdasm_") +
-                                    filter_name(mtd->name->s)).c_str());
+        dmtd.name = dxc_induct_str(smethod.c_str());
         dmtd.prototype = dxc_copy_strstr(mtd->prototype);
         source_methods.push_back(rmtd);
         dest_methods.push_back(dmtd);
@@ -296,15 +352,6 @@ string get_import_name(dasmcl* referer, const string& cldesc) {
   }
 }
 
-bool is_dxdasm_identifier(const string& id) {
-  return id.size() >= 8 && id.substr(0, 8) == "_dxdasm_";
-}
-
-string strip_dxdasm_identifier(const string& id) {
-  assert(is_dxdasm_identifier(id));
-  return id.substr(8);
-}
-
 void strip_classes(DexFile* dxfile) {
   vector<ref_field> source_fields; vector<ref_field> dest_fields;
   vector<ref_method> source_methods; vector<ref_method> dest_methods;
@@ -312,55 +359,89 @@ void strip_classes(DexFile* dxfile) {
   source_classes.push_back(dxc_induct_str("Lorg/dxcut/dxdasm/DxdasmEnum;"));
   dest_classes.push_back(dxc_induct_str("Ljava/lang/Enum;"));
   DexClass* pos = dxfile->classes;
+
   for(DexClass* cl = dxfile->classes; !dxc_is_sentinel_class(cl); ++cl) {
     string type = cl->name->s;
+    string stype = desanitize_type(type);
     string tbrief = type_brief(type);
     string package = get_package_name(dxc_type_nice(cl->name->s));
     
-    if(strcmp("Lorg/dxcut/dxdasm/DxdasmEnum;", cl->name->s) &&
-       package == "org.dxcut.dxdasm") {
+    if(package == "org.dxcut.dxdasm") {
       dxc_free_class(cl);
       continue;
     }
 
-    if(is_dxdasm_identifier(tbrief)) {
-      string stripped = strip_dxdasm_identifier(cl->name->s) + ";";
-      type = type.substr(0, type.size() - stripped.size()) + stripped;
+    if(type != stype) {
       source_classes.push_back(dxc_copy_str(cl->name));
-      dest_classes.push_back(dxc_induct_str(type.c_str()));
+      dest_classes.push_back(dxc_induct_str(stype.c_str()));
     }
     for(int iter = 0; iter < 2; iter++)
     for(DexField* fld = iter ? cl->static_fields : cl->instance_fields;
         !dxc_is_sentinel_field(fld); ++fld) {
-      if(is_dxdasm_identifier(fld->name->s)) {
+      string sfield = desanitize_identifier(fld->name->s);
+      if(sfield != fld->name->s) {
         ref_field rfld, dfld;
         rfld.defining_class = dxc_copy_str(cl->name);
         rfld.name = dxc_copy_str(fld->name);
         rfld.type = dxc_copy_str(fld->type);
         dfld.defining_class = dxc_copy_str(cl->name);
-        dfld.name = dxc_induct_str(
-            strip_dxdasm_identifier(fld->name->s).c_str());
+        dfld.name = dxc_induct_str(sfield.c_str());
         dfld.type = dxc_copy_str(fld->type);
         source_fields.push_back(rfld);
         dest_fields.push_back(dfld);
       }
     }
-    for(int iter = 0; iter < 2; iter++)
-    for(DexMethod* mtd = iter ? cl->direct_methods : cl->virtual_methods;
-        !dxc_is_sentinel_method(mtd); ++mtd) {
-      if(!is_java_identifier(mtd->name->s) && strcmp("<init>", mtd->name->s) &&
-         strcmp("<clinit>", mtd->name->s)) {
+
+    map<ref_method, DexMethod*, RefMethodCompare> clobber_map;
+    for(int iter = 0; iter < 2; iter++) {
+      DexMethod* mtdpos = iter ? cl->direct_methods : cl->virtual_methods;
+      for(DexMethod* mtd = iter ? cl->direct_methods : cl->virtual_methods;
+          !dxc_is_sentinel_method(mtd); ++mtd) {
         ref_method rmtd, dmtd;
-        rmtd.defining_class = dxc_copy_str(cl->name);
-        rmtd.name = dxc_copy_str(mtd->name);
-        rmtd.prototype = dxc_copy_strstr(mtd->prototype);
-        dmtd.defining_class = dxc_copy_str(cl->name);
-        dmtd.name = dxc_induct_str(
-            strip_dxdasm_identifier(mtd->name->s).c_str());
-        dmtd.prototype = dxc_copy_strstr(mtd->prototype);
-        source_methods.push_back(rmtd);
-        dest_methods.push_back(dmtd);
+        bool name_change = false;
+        string smethod = desanitize_identifier(mtd->name->s);
+        if(string("dxdasm_static") == mtd->name->s) {
+          smethod = "<clinit>";
+          mtd->access_flags =
+              (DexAccessFlags)(mtd->access_flags | ACC_CONSTRUCTOR);
+        }
+        if(smethod != mtd->name->s && strcmp("<init>", mtd->name->s)) {
+          name_change = true;
+          rmtd.defining_class = dxc_copy_str(cl->name);
+          rmtd.name = dxc_copy_str(mtd->name);
+          rmtd.prototype = dxc_copy_strstr(mtd->prototype);
+          dmtd.defining_class = dxc_copy_str(cl->name);
+          dmtd.name = dxc_induct_str(smethod.c_str());
+          dmtd.prototype = dxc_copy_strstr(mtd->prototype);
+        } else {
+          dmtd.defining_class = cl->name;
+          dmtd.name = mtd->name;
+          dmtd.prototype = mtd->prototype;
+        }
+
+        /* Sometimes javac inserts methods that were already present and
+         * handled.  If two function names collide we take the one that wasn't
+         * synthetic.  This also happens with static initializers which we
+         * rename dxdasm_static. */
+        DexMethod*& clobber = clobber_map[dmtd];
+        if(clobber) {
+          if(!strcmp(mtd->name->s, "<clinit>") ||
+             (smethod != "<clinit>" && (mtd->access_flags & ACC_SYNTHETIC))) {
+            continue;
+          } else {
+            *clobber = *mtd;
+          }
+        } else {
+          clobber = mtdpos;
+          (*mtdpos++) = *mtd;
+        }
+
+        if(name_change) {
+          source_methods.push_back(rmtd);
+          dest_methods.push_back(dmtd);
+        }
       }
+      dxc_make_sentinel_method(mtdpos);
     }
     *(pos++) = *cl;
   }
