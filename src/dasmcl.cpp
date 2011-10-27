@@ -206,7 +206,6 @@ string sanitize_type(string type) {
       string ntok = sanitize_identifier(type.substr(last, i - last), i);
       for(int j = -2; !toks.insert(ntok).second; j--) {
         ntok = sanitize_identifier(type.substr(last, i - last), j);
-fprintf(stderr, "%s\n", ntok.c_str());
       }
       type.replace(last, i - last, ntok);
       i += ntok.size() - (i - last);
