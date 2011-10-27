@@ -179,7 +179,8 @@ string sanitize_identifier(string id, int token = -1) {
       return string("_dxdasm_") + id;
     } else {
       char buf[32];
-      sprintf(buf, "%d", token < 0 ? -token - 2 : token);
+      sprintf(buf, "%s%d", token < 0 ? "x" : "",
+                           token < 0 ? -token - 2 : token);
       return string("_dxdasm") + buf + "_" + id;
     }
   }
@@ -196,13 +197,27 @@ string desanitize_identifier(string id) {
 
 static
 string sanitize_type(string type) {
-  int last = type.size() - 1;
-  for(int i = type.size() - 2; i >= 1; i--) {
-    if(i == 1 || type[i - 1] == '/' || type[i - 1] == '$') {
-      type.replace(i, last - i,
-                   sanitize_identifier(type.substr(i, last - i), i));
-      last = i - 1;
+  /* Sanitize all of the tokens.  Additionally make sure all the non-namespace
+   * tokens are unique. */
+  int last = 1;
+  set<string> toks;
+  for(int i = 1; i < type.size(); i++) {
+    if(type[i] == '/' || type[i] == '$' || type[i] == ';') {
+      string ntok = sanitize_identifier(type.substr(last, i - last), i);
+      for(int j = -2; !toks.insert(ntok).second; j--) {
+        ntok = sanitize_identifier(type.substr(last, i - last), j);
+fprintf(stderr, "%s\n", ntok.c_str());
+      }
+      type.replace(last, i - last, ntok);
+      i += ntok.size() - (i - last);
+      last = i + 1;
     }
+  }
+
+  if(type.find('/') == string::npos) {
+    /* I want to put everything in a package to make things simpler.  We'll
+     * strip it out of the package later or reassembly. */
+    type = string("Ldxdasm_default/") + type.substr(1);
   }
   return type;
 }
@@ -217,10 +232,12 @@ string desanitize_type(string type) {
       last = i - 1;
     }
   }
+  string prefix = "Ldxdasm_default/";
+  if(type.size() > prefix.size() && prefix == type.substr(0, prefix.size())) {
+    type = string("L") + type.substr(prefix.size());
+  }
   return type;
 }
-
-
 
 void prep_classes(DexFile* dxfile, std::vector<dasmcl>& clist,
                   map<string, dasmcl*>& clmap) {
@@ -259,8 +276,18 @@ void prep_classes(DexFile* dxfile, std::vector<dasmcl>& clist,
     for(DexMethod* mtd = iter ? cl->direct_methods : cl->virtual_methods;
         !dxc_is_sentinel_method(mtd); ++mtd) {
       string smethod = sanitize_identifier(mtd->name->s);
-      for(int i = 0; !method_names.insert(smethod).second; i++) {
-        smethod = sanitize_identifier(mtd->name->s, -i - 2);
+
+      /* This isn't 100% correct.  I'm trying to deal with synthetic methods
+       * that get inserted by javac in relation to varargs methods.  Really I
+       * should be checking the SYNTHETIC flag. */
+      string params;
+      for(ref_str** para = mtd->prototype->s + 1; *para; ++para) {
+        params += (*para)->s[0];
+      }
+      if(!params.empty() && params[params.size() - 1] == '[') {
+        for(int i = 0; !method_names.insert(smethod + params).second; i++) {
+          smethod = sanitize_identifier(mtd->name->s, -i - 2);
+        }
       }
 
       if(smethod != mtd->name->s && strcmp("<init>", mtd->name->s) &&

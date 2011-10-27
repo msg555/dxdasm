@@ -552,14 +552,14 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
                type_brief(cl->name->s).c_str());
       } else {
         printf("%s  %s %s(", tabbing.c_str(), flags.c_str(),
-               get_import_name(dcl, cl->name->s).c_str());
+               type_brief(cl->name->s).c_str());
       }
     } else if(flags.empty()) {
       printf("%s  %s %s(", tabbing.c_str(),
-             type_brief(mtd->prototype->s[0]->s).c_str(), mtd->name->s);
+          get_import_name(dcl, mtd->prototype->s[0]->s).c_str(), mtd->name->s);
     } else {
       printf("%s  %s %s %s(", tabbing.c_str(), flags.c_str(),
-             type_brief(mtd->prototype->s[0]->s).c_str(), mtd->name->s);
+          get_import_name(dcl, mtd->prototype->s[0]->s).c_str(), mtd->name->s);
     }
     if(mtd->code_body && mtd->code_body->debug_information) {
       ref_str** para = mtd->code_body->debug_information->parameter_names->s;
@@ -567,9 +567,9 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
         if(i > 1) printf(", ");
         string type_str;
         if(!mtd->prototype->s[i + 1] && (mtd->access_flags & ACC_VARARGS)) {
-          type_str = type_brief(mtd->prototype->s[i]->s + 1) + "...";
+          type_str = get_import_name(dcl, mtd->prototype->s[i]->s + 1) + "...";
         } else {
-          type_str = type_brief(mtd->prototype->s[i]->s);
+          type_str = get_import_name(dcl, mtd->prototype->s[i]->s);
         }
 
         if(*para && (*para)->s[0]) {
@@ -611,8 +611,15 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
       }
     } else {
       for(int i = 1; mtd->prototype->s[i]; i++) {
+        string type_str;
+        if(!mtd->prototype->s[i + 1] && (mtd->access_flags & ACC_VARARGS)) {
+          type_str = get_import_name(dcl, mtd->prototype->s[i]->s + 1) + "...";
+        } else {
+          type_str = get_import_name(dcl, mtd->prototype->s[i]->s);
+        }
+
         if(i > 1) printf(", ");
-        printf("%s arg%d", type_brief(mtd->prototype->s[i]->s).c_str(), i);
+        printf("%s arg%d", type_str.c_str(), i);
       }
       if(mtd->code_body) {
         printf(")%s {\n", throwsString.c_str());
