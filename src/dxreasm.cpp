@@ -521,6 +521,7 @@ static void removeAnnotationAndDelete(DexAnnotation* annon) {
   for(; !dxc_is_sentinel_annotation(annon); annon++) {
     *annon = annon[1];
   }
+  dxc_make_sentinel_annotation(--annon);
 }
 
 void reassemble_class(DexClass* cl) {
@@ -533,24 +534,50 @@ void reassemble_class(DexClass* cl) {
           getParameter(annon, "methodAliases"));
       field_alias_map = build_field_alias_map(
           getParameter(annon, "fieldAliases"));
-      removeAnnotationAndDelete(annon);
+      removeAnnotationAndDelete(annon--);
+    } else if(!strcmp("Lorg/dxcut/dxdasm/DxdasmAccess;", annon->type->s)) {
+      cl->access_flags = (DexAccessFlags)
+          getParameter(annon, "accessFlags")->value.val_int;
+      removeAnnotationAndDelete(annon--);
+    }
+  }
+  for(DexAnnotation* annon = cl->annotations;
+      !dxc_is_sentinel_annotation(annon); ++annon) {
+    if(!strcmp("Ldalvik/annotation/InnerClass;", annon->type->s)) {
+      getParameter(annon, "accessFlags")->value.val_int =
+          (dx_uint)cl->access_flags;
     }
   }
 
   for(int iter = 0; iter < 2; iter++)
   for(DexMethod* mtd = iter ? cl->virtual_methods : cl->direct_methods;
       !dxc_is_sentinel_method(mtd); ++mtd) {
-    if(mtd->code_body) {
-      for(DexAnnotation* annon = mtd->annotations;
-          !dxc_is_sentinel_annotation(annon); ++annon) {
-        if(!strcmp("Lorg/dxcut/dxdasm/DxdasmMethod;", annon->type->s)) {
-          DexCode* old_code = mtd->code_body;
-          mtd->code_body = reassemble_code(cl, mtd, annon,
-              method_alias_map, field_alias_map);
-          mtd->code_body->ins_size = old_code->ins_size;
-          dxc_free_code(old_code);
-          removeAnnotationAndDelete(annon);
-        }
+    for(DexAnnotation* annon = mtd->annotations;
+        !dxc_is_sentinel_annotation(annon); ++annon) {
+      if(!strcmp("Lorg/dxcut/dxdasm/DxdasmMethod;", annon->type->s)) {
+        DexCode* old_code = mtd->code_body;
+        mtd->code_body = reassemble_code(cl, mtd, annon,
+            method_alias_map, field_alias_map);
+        mtd->code_body->ins_size = old_code->ins_size;
+        dxc_free_code(old_code);
+        removeAnnotationAndDelete(annon--);
+      } else if(!strcmp("Lorg/dxcut/dxdasm/DxdasmAccess;", annon->type->s)) {
+        mtd->access_flags = (DexAccessFlags)
+            getParameter(annon, "accessFlags")->value.val_int;
+        removeAnnotationAndDelete(annon--);
+      }
+    }
+  }
+
+  for(int iter = 0; iter < 2; iter++)
+  for(DexField* fld = iter ? cl->static_fields : cl->instance_fields;
+      !dxc_is_sentinel_field(fld); ++fld) {
+    for(DexAnnotation* annon = fld->annotations;
+        !dxc_is_sentinel_annotation(annon); ++annon) {
+      if(!strcmp("Lorg/dxcut/dxdasm/DxdasmAccess;", annon->type->s)) {
+        fld->access_flags = (DexAccessFlags)
+            getParameter(annon, "accessFlags")->value.val_int;
+        removeAnnotationAndDelete(annon--);
       }
     }
   }

@@ -18,6 +18,9 @@
 using namespace std;
 using namespace dxcut;
 
+#define STANDARD_FLAGS (ACC_PUBLIC | ACC_PRIVATE | ACC_STATIC | \
+                        ACC_FINAL | ACC_CONSTRUCTOR | ACC_INTERFACE)
+
 string get_zero_literal(char type) {
   switch(type) {
     case 'Z': return "false";
@@ -160,16 +163,18 @@ void decompile_dalvik(dasmcl* dcl, DexInstruction* insns, dx_uint count,
     switch(fmt.specialType) {
       case SPECIAL_CONSTANT:
         printf(" #%lld", in->special.constant);
+/*
         if(in->opcode == OP_CONST_WIDE) {
           double x = 0;
           memcpy(&x, &in->special.constant, 8);
-          // printf(" #(double %.11g)", x);
+          printf(" #(double %.11g)", x);
         } else if(in->opcode == OP_CONST_WIDE_HIGH16) {
           double x = 0;
           dx_ulong v = in->special.constant << 48;
           memcpy(&x, &v, 8);
-          // printf(" #(double %.11g)", x);
+          printf(" #(double %.11g)", x);
         }
+*/
         break;
       case SPECIAL_TARGET:
         if(in->opcode == OP_FILL_ARRAY_DATA) {
@@ -336,6 +341,15 @@ string convert_dollars(const string& s) {
   return ret;
 }
 
+void write_access_flags(dasmcl* dcl, dx_uint depth, DexAccessFlags flags) {
+  if((flags & ~STANDARD_FLAGS) == 0) return;
+  string tabbing = string(depth * 2, ' ');
+  printf("%s@%s(\n", tabbing.c_str(),
+         get_import_name(dcl, "Lorg/dxcut/dxdasm/DxdasmAccess;").c_str());
+  printf("%s  accessFlags = 0x%X\n", tabbing.c_str(), (dx_uint)flags);
+  printf("%s)\n", tabbing.c_str());
+}
+
 void write_alias_table(dasmcl* dcl, dx_uint depth) {
   string tabbing = string(depth * 2, ' ');
   printf("%s@%s(\n", tabbing.c_str(),
@@ -414,6 +428,7 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
       printf("\n");
     }
   }
+  write_access_flags(dcl, depth, cl->access_flags);
   write_alias_table(dcl, depth);
   
   DexAccessFlags nflags = cl->access_flags & ACC_INTERFACE ?
@@ -447,7 +462,7 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
            type_brief(cl->name->s).c_str());
   }
   if(cl->super_class && strcmp("Ljava/lang/Object;", cl->super_class->s)) {
-    printf("extends %s ", type_brief(cl->super_class->s).c_str());
+    printf("extends %s ", get_import_name(dcl, cl->super_class->s).c_str());
   }
   if(cl->interfaces->s[0]) {
     ref_str** str;
@@ -460,6 +475,13 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
     printf(" ");
   }
   printf("{\n");
+
+  bool noStaticInit = true;
+  for(DexMethod* mtd = cl->direct_methods;
+      noStaticInit && !dxc_is_sentinel_method(mtd); mtd++) {
+    noStaticInit = (mtd->access_flags & ACC_CONSTRUCTOR) == 0 ||
+                   (mtd->access_flags & ACC_STATIC) == 0;
+  }
 
   int feedLine = 0;
   for(int iter = 0; iter < 2; iter++) {
@@ -484,6 +506,8 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
       }
 */
 
+      write_access_flags(dcl, depth + 1, nflags);
+
       feedLine = 1;
       flags = dxc_access_flags_nice(nflags);
       if(flags.empty()) {
@@ -501,6 +525,9 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
           printf(" = %s;\n", dxc_value_nice(svalue));
         }
         fld->access_flags = (DexAccessFlags)(fld->access_flags | ACC_UNUSED);
+      } else if((fld->access_flags & ACC_STATIC) && noStaticInit) {
+        printf(" = %s;\n", get_zero_literal(fld->type->s[0]).c_str());
+        fld->access_flags = (DexAccessFlags)(fld->access_flags | ACC_UNUSED);
       } else {
         printf(";\n");
       }
@@ -512,6 +539,8 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
       !dxc_is_sentinel_method(mtd); mtd++) {
     if(feedLine) printf("\n");
     feedLine = 1;
+
+    write_access_flags(dcl, depth + 1, mtd->access_flags);
 
     if(mtd->code_body) {
       DexCode& code = *mtd->code_body;
@@ -684,8 +713,9 @@ void decompile_class(dasmcl* dcl, dx_uint depth) {
             !dxc_is_sentinel_field(fld); fld++) {
           if((fld->access_flags & ACC_FINAL) &&
              !(fld->access_flags & ACC_UNUSED)) {
-            printf("%s    %s = %s;\n", tabbing.c_str(), fld->name->s,
-                   get_zero_literal(fld->type->s[0]).c_str());
+            printf("%s    %s%s = %s;\n", tabbing.c_str(),
+                   (mtd->access_flags & ACC_STATIC ? "" : "this."),
+                   fld->name->s, get_zero_literal(fld->type->s[0]).c_str());
           }
         }
       }

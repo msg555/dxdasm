@@ -63,7 +63,7 @@ void setup_enum_init(DexMethod* method) {
 void add_dxdasm_annotations(DexFile* f) {
   int size = 0;
   for(DexClass* cl = f->classes; !dxc_is_sentinel_class(cl); ++cl) size++;
-  f->classes = (DexClass*)realloc(f->classes, (size + 12) * sizeof(DexClass));
+  f->classes = (DexClass*)realloc(f->classes, (size + 13) * sizeof(DexClass));
   DexClass* cl = f->classes + size;
   DexClass* cl2 = f->classes + size + 1;
   DexClass* cl3 = f->classes + size + 2;
@@ -75,7 +75,8 @@ void add_dxdasm_annotations(DexFile* f) {
   DexClass* cl9 = f->classes + size + 8;
   DexClass* cl10 = f->classes + size + 9;
   DexClass* cl11 = f->classes + size + 10;
-  dxc_make_sentinel_class(f->classes + size + 11);
+  DexClass* cl12 = f->classes + size + 11;
+  dxc_make_sentinel_class(f->classes + size + 12);
 
   cl->name = dxc_induct_str("Lorg/dxcut/dxdasm/DxdasmMethod;");
   cl->access_flags = (DexAccessFlags)
@@ -315,4 +316,23 @@ void add_dxdasm_annotations(DexFile* f) {
   dxc_make_sentinel_method(cl11->direct_methods + 4);
   cl11->virtual_methods = (DexMethod*)calloc(1, sizeof(DexMethod));
   dxc_make_sentinel_method(cl11->virtual_methods);
+
+  cl12->name = dxc_induct_str("Lorg/dxcut/dxdasm/DxdasmAccess;");
+  cl12->access_flags = (DexAccessFlags)
+                     (ACC_PUBLIC | ACC_INTERFACE | ACC_ANNOTATION);
+  cl12->super_class = dxc_induct_str("Ljava/lang/Object;");
+  cl12->interfaces = dxc_create_strstr(0);
+  cl12->source_file = NULL;
+  cl12->annotations = (DexAnnotation*)malloc(sizeof(DexAnnotation));
+  dxc_make_sentinel_annotation(cl12->annotations);
+  cl12->static_values = (DexValue*)malloc(sizeof(DexValue));
+  dxc_make_sentinel_value(cl12->static_values);
+  cl12->static_fields = cl12->instance_fields =
+      (DexField*)malloc(sizeof(DexField));
+  dxc_make_sentinel_field(cl12->static_fields);
+  cl12->direct_methods = (DexMethod*)calloc(2, sizeof(DexMethod));
+  setup_noret_method(cl12->direct_methods, "I", "accessFlags");
+  dxc_make_sentinel_method(cl12->direct_methods + 1);
+  cl12->virtual_methods = (DexMethod*)calloc(1, sizeof(DexMethod));
+  dxc_make_sentinel_method(cl12->virtual_methods);
 }
