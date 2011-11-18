@@ -9,7 +9,12 @@ dxdasm_SOURCES = \
   src/dasmcl.cpp \
   src/annotations.cpp \
   src/javarules.cpp \
-  src/mutf8.cpp
+  src/mutf8.cpp \
+  src/annotations.h \
+  src/dasmcl.h \
+  src/javarules.h \
+  src/modids.h \
+  src/mutf8.h
 
 dxreasm_LDFLAGS = -ldxcut
 dxreasm_SOURCES = \
@@ -17,4 +22,9 @@ dxreasm_SOURCES = \
   src/dasmcl.cpp \
   src/annotations.cpp \
   src/javarules.cpp \
-  src/mutf8.cpp
+  src/mutf8.cpp \
+  src/annotations.h \
+  src/dasmcl.h \
+  src/javarules.h \
+  src/modids.h \
+  src/mutf8.h
